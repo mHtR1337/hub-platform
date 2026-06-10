@@ -1,7 +1,14 @@
 import { auth } from "@clerk/nextjs/server"
-import { redirect } from "next/navigation"
+import type { ComponentType } from "react"
 
-import { hasEntitlement } from "@/lib/entitlements"
+const subAppLoaders: Record<
+  string,
+  () => Promise<{ default: ComponentType<{ userId: string }> }>
+> = {
+  "hrv-monitor": () => import("@/sub-apps/hrv-monitor/index"),
+  "combat-tracker": () => import("@/sub-apps/combat-tracker/index"),
+  "endurance-calculator": () => import("@/sub-apps/endurance-calculator/index"),
+}
 
 export default async function SubAppPage({
   params,
@@ -12,20 +19,21 @@ export default async function SubAppPage({
   const { userId } = await auth()
 
   if (!userId) {
-    redirect("/login")
+    return null
   }
 
-  const entitled = await hasEntitlement(userId, slug)
-  if (!entitled) {
-    redirect("/apps?locked=true")
+  const loader = subAppLoaders[slug]
+  if (!loader) {
+    return (
+      <div className="flex flex-col gap-4 p-8">
+        <h1 className="text-2xl font-semibold tracking-tight">App not found</h1>
+        <p className="text-sm text-muted-foreground">
+          No sub-app is registered for <code className="font-mono">{slug}</code>.
+        </p>
+      </div>
+    )
   }
 
-  return (
-    <div className="flex flex-col gap-4 p-8">
-      <h1 className="text-2xl font-semibold tracking-tight">{slug}</h1>
-      <p className="text-sm text-muted-foreground">
-        Sub-app content for {slug} will render here.
-      </p>
-    </div>
-  )
+  const SubApp = (await loader()).default
+  return <SubApp userId={userId} />
 }

@@ -15,6 +15,9 @@ export async function getUserEntitlements(clerkUserId: string): Promise<string[]
   return entitlements.map((e) => e.appSlug)
 }
 
+/** Alias used by hooks and legacy API routes. */
+export const getEntitlements = getUserEntitlements
+
 export async function hasEntitlement(
   clerkUserId: string,
   appSlug: string,

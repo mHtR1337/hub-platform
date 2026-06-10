@@ -10,14 +10,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  let body: { appSlug?: string }
+  let body: { appSlug?: string; slug?: string }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const appSlug = body.appSlug?.trim()
+  const appSlug = (body.appSlug ?? body.slug)?.trim()
   if (!appSlug) {
     return NextResponse.json({ error: "appSlug is required" }, { status: 400 })
   }

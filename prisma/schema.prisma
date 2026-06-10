@@ -1,0 +1,96 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clerkId   String   @unique @map("clerk_id")
+  email     String   @unique
+  role      String   @default("athlete")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  entitlements           Entitlement[]
+  coachAthletesAsCoach   CoachAthlete[]      @relation("CoachAthletesCoach")
+  coachAthletesAsAthlete CoachAthlete[]      @relation("CoachAthletesAthlete")
+  subscriptionEvents     SubscriptionEvent[]
+
+  @@index([clerkId], map: "users_clerk_id_idx")
+  @@map("users")
+}
+
+model App {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug              String   @unique
+  name              String
+  description       String
+  priceMonthlyCents Int      @map("price_monthly_cents")
+  stripePriceId     String   @unique @map("stripe_price_id")
+  active            Boolean  @default(true)
+  sortOrder         Int      @default(0) @map("sort_order")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  entitlements Entitlement[]
+
+  @@map("apps")
+}
+
+model Entitlement {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId               String   @map("user_id") @db.Uuid
+  appSlug              String   @map("app_slug")
+  status               String
+  stripeSubscriptionId String   @unique @map("stripe_subscription_id")
+  stripeCustomerId     String   @map("stripe_customer_id")
+  currentPeriodEnd     DateTime @map("current_period_end") @db.Timestamptz(6)
+  cancelAtPeriodEnd    Boolean  @default(false) @map("cancel_at_period_end")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  app  App  @relation(fields: [appSlug], references: [slug], onDelete: Restrict)
+
+  @@index([userId], map: "entitlements_user_id_idx")
+  @@index([userId, appSlug], map: "entitlements_user_slug_idx")
+  @@index([stripeSubscriptionId], map: "entitlements_stripe_sub_idx")
+  @@map("entitlements")
+}
+
+model CoachAthlete {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  coachId     String    @map("coach_id") @db.Uuid
+  athleteId   String    @map("athlete_id") @db.Uuid
+  status      String    @default("pending")
+  inviteToken String?   @unique @map("invite_token")
+  invitedAt   DateTime  @default(now()) @map("invited_at") @db.Timestamptz(6)
+  acceptedAt  DateTime? @map("accepted_at") @db.Timestamptz(6)
+
+  coach   User @relation("CoachAthletesCoach", fields: [coachId], references: [id], onDelete: Cascade)
+  athlete User @relation("CoachAthletesAthlete", fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@unique([coachId, athleteId], map: "coach_athletes_unique")
+  @@index([coachId], map: "coach_athletes_coach_idx")
+  @@index([athleteId], map: "coach_athletes_athlete_idx")
+  @@map("coach_athletes")
+}
+
+model SubscriptionEvent {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  appSlug       String   @map("app_slug")
+  eventType     String   @map("event_type")
+  stripeEventId String   @unique @map("stripe_event_id")
+  payload       Json     @db.JsonB
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscription_events")
+}

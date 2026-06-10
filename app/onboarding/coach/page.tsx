@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { db } from "@/lib/db"
-import { syncClerkEmail } from "@/lib/users"
+import { ensureDbUser, syncClerkEmail } from "@/lib/users"
 
 export default async function CoachOnboardingPage() {
   const { userId } = await auth()
@@ -30,9 +30,7 @@ export default async function CoachOnboardingPage() {
     await client.users.updateUser(userId, {
       publicMetadata: { role: "athlete" },
     })
-    await db.user.create({
-      data: { clerkId: userId, email, role: "athlete" },
-    })
+    await ensureDbUser(userId, email, "athlete")
   }
 
   return (

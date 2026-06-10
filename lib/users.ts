@@ -2,8 +2,42 @@ import { auth } from "@clerk/nextjs/server"
 import { redirect } from "next/navigation"
 
 import { db } from "@/lib/db"
+import type { User } from "@/lib/generated/prisma/client"
 import { markOnboardingComplete, syncClerkEmail } from "@/lib/onboarding"
 import type { UserRole } from "@/types"
+
+type UserDb = Pick<typeof db, "user">
+
+/** Link Clerk user to a DB row; re-link by email if the address already exists. */
+export async function ensureDbUser(
+  clerkId: string,
+  email: string,
+  role: UserRole = "athlete",
+  client: UserDb = db,
+): Promise<User> {
+  const byClerk = await client.user.findUnique({ where: { clerkId } })
+  if (byClerk) {
+    if (byClerk.role !== role) {
+      return client.user.update({
+        where: { clerkId },
+        data: { role },
+      })
+    }
+    return byClerk
+  }
+
+  const byEmail = await client.user.findUnique({ where: { email } })
+  if (byEmail) {
+    return client.user.update({
+      where: { email },
+      data: { clerkId, role },
+    })
+  }
+
+  return client.user.create({
+    data: { clerkId, email, role },
+  })
+}
 
 export async function getCurrentDbUser() {
   const { userId } = await auth()
@@ -39,12 +73,7 @@ export async function switchToAthlete() {
   if (!email) redirect("/login")
 
   await setClerkRole(userId, "athlete")
-
-  await db.user.upsert({
-    where: { clerkId: userId },
-    create: { clerkId: userId, email, role: "athlete" },
-    update: { role: "athlete" },
-  })
+  await ensureDbUser(userId, email, "athlete")
 }
 
 export async function becomeCoachWithOrganization(input: {
@@ -68,11 +97,7 @@ export async function becomeCoachWithOrganization(input: {
   }
 
   await db.$transaction(async (tx) => {
-    const user = await tx.user.upsert({
-      where: { clerkId: userId },
-      create: { clerkId: userId, email, role: "coach" },
-      update: { role: "coach" },
-    })
+    const user = await ensureDbUser(userId, email, "coach", tx)
 
     const orgExists = await tx.organization.findUnique({
       where: { coachId: user.id },

@@ -6,6 +6,7 @@ import { Hexagon, Dumbbell, Users, ArrowRight } from "lucide-react"
 import { HardRedirect } from "@/components/platform/hard-redirect"
 import { db } from "@/lib/db"
 import { markOnboardingComplete, syncClerkEmail } from "@/lib/onboarding"
+import { ensureDbUser } from "@/lib/users"
 import type { UserRole } from "@/types"
 
 async function setAthleteRole(formData: FormData) {
@@ -21,12 +22,7 @@ async function setAthleteRole(formData: FormData) {
   if (!email) redirect("/login")
 
   await markOnboardingComplete(userId, "athlete")
-
-  await db.user.upsert({
-    where: { clerkId: userId },
-    create: { clerkId: userId, email, role: "athlete" },
-    update: { role: "athlete" },
-  })
+  await ensureDbUser(userId, email, "athlete")
 
   redirect("/dashboard")
 }

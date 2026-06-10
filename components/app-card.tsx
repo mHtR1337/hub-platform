@@ -1,7 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { Lock } from "lucide-react"
+import { Lock, Loader2 } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 import { formatPrice, type HubApp } from "@/lib/apps"
 import { appIconMap } from "@/lib/app-icons"
@@ -11,17 +12,45 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 
 export function AppCard({ app }: { app: HubApp }) {
+  const router = useRouter()
   const Icon = appIconMap[app.icon]
   const isLocked = app.state === "locked"
+  const [isLoading, setIsLoading] = React.useState(false)
 
-  const handleActivate = React.useCallback(() => {
-    // Open (unlocked) or unlock (locked) the app.
-  }, [])
+  const handleActivate = React.useCallback(async () => {
+    if (isLoading) return
+
+    if (!isLocked) {
+      router.push(`/app/${app.id}`)
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      const response = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appSlug: app.id }),
+      })
+
+      const data = (await response.json()) as { url?: string; error?: string }
+
+      if (!response.ok || !data.url) {
+        throw new Error(data.error ?? "Failed to start checkout")
+      }
+
+      window.location.href = data.url
+    } catch (error) {
+      console.error("Checkout failed:", error)
+      setIsLoading(false)
+    }
+  }, [app.id, isLoading, isLocked, router])
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (isLoading) return
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault()
-      handleActivate()
+      void handleActivate()
     }
   }
 
@@ -86,13 +115,23 @@ export function AppCard({ app }: { app: HubApp }) {
             variant="outline"
             className="w-full"
             tabIndex={-1}
-            onClick={handleActivate}
+            disabled={isLoading}
+            onClick={() => void handleActivate()}
           >
-            <Lock className="size-4" aria-hidden="true" />
-            Unlock
+            {isLoading ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Lock className="size-4" aria-hidden="true" />
+            )}
+            {isLoading ? "Redirecting…" : "Unlock"}
           </Button>
         ) : (
-          <Button className="w-full" tabIndex={-1} onClick={handleActivate}>
+          <Button
+            className="w-full"
+            tabIndex={-1}
+            disabled={isLoading}
+            onClick={() => void handleActivate()}
+          >
             Open
           </Button>
         )}

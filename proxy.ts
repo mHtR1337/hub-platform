@@ -14,7 +14,10 @@ const isPublicRoute = createRouteMatcher([
 const isAuthPage = createRouteMatcher(["/login(.*)", "/signup(.*)"])
 
 function redirectTo(path: string, req: NextRequest) {
-  return NextResponse.redirect(new URL(path, req.nextUrl.origin))
+  const url = req.nextUrl.clone()
+  url.pathname = path
+  url.search = ""
+  return NextResponse.redirect(url)
 }
 
 export default clerkMiddleware(async (auth, req) => {

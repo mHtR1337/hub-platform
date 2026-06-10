@@ -2,6 +2,21 @@ export type AppState = "unlocked" | "locked"
 
 export type AppIcon = "activity" | "swords" | "gauge"
 
+/** UI metadata keyed by app slug (not stored in the database). */
+export const APP_CATALOG_META: Record<
+  string,
+  { icon: AppIcon; category: string }
+> = {
+  "hrv-monitor": { icon: "activity", category: "Recovery" },
+  "combat-tracker": { icon: "swords", category: "Load" },
+  "endurance-calculator": { icon: "gauge", category: "Performance" },
+}
+
+const DEFAULT_CATALOG_META = {
+  icon: "activity" as AppIcon,
+  category: "App",
+}
+
 export interface HubApp {
   id: string
   name: string
@@ -57,6 +72,13 @@ export function unlockedApps(): HubApp[] {
 
 export function lockedApps(): HubApp[] {
   return apps.filter((a) => a.state === "locked")
+}
+
+export function catalogMetaForSlug(slug: string): {
+  icon: AppIcon
+  category: string
+} {
+  return APP_CATALOG_META[slug] ?? DEFAULT_CATALOG_META
 }
 
 /** Sum of the monthly price of all unlocked apps. */

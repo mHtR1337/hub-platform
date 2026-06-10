@@ -1,8 +1,38 @@
+import { auth } from "@clerk/nextjs/server"
+
 import { AppShell } from "@/components/app-shell"
 import { BundleBanner } from "@/components/bundle-banner"
 import { AppCatalog } from "@/components/app-catalog"
+import { catalogMetaForSlug, type HubApp } from "@/lib/apps"
+import { db } from "@/lib/db"
+import { getUserEntitlements } from "@/lib/entitlements"
 
-export default function AppsPage() {
+export default async function AppsPage() {
+  const { userId } = await auth()
+
+  const [dbApps, entitledSlugs] = await Promise.all([
+    db.app.findMany({
+      where: { active: true },
+      orderBy: { sortOrder: "asc" },
+    }),
+    userId ? getUserEntitlements(userId) : Promise.resolve([]),
+  ])
+
+  const entitledSet = new Set(entitledSlugs)
+
+  const apps: HubApp[] = dbApps.map((app) => {
+    const meta = catalogMetaForSlug(app.slug)
+    return {
+      id: app.slug,
+      name: app.name,
+      description: app.description,
+      icon: meta.icon,
+      category: meta.category,
+      price: app.priceMonthlyCents / 100,
+      state: entitledSet.has(app.slug) ? "unlocked" : "locked",
+    }
+  })
+
   return (
     <AppShell title="My apps" searchPlaceholder="Search the catalog...">
       <div className="flex flex-col gap-8">
@@ -16,7 +46,7 @@ export default function AppsPage() {
         </div>
 
         <BundleBanner />
-        <AppCatalog />
+        <AppCatalog apps={apps} />
       </div>
     </AppShell>
   )

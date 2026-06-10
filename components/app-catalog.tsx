@@ -3,7 +3,7 @@
 import * as React from "react"
 import { Search } from "lucide-react"
 
-import { apps, type AppState } from "@/lib/apps"
+import { type AppState, type HubApp } from "@/lib/apps"
 import { AppCard } from "@/components/app-card"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -16,7 +16,7 @@ const filters: { value: Filter; label: string }[] = [
   { value: "locked", label: "Locked" },
 ]
 
-export function AppCatalog() {
+export function AppCatalog({ apps }: { apps: HubApp[] }) {
   const [query, setQuery] = React.useState("")
   const [filter, setFilter] = React.useState<Filter>("all")
 
@@ -31,7 +31,7 @@ export function AppCatalog() {
         app.category.toLowerCase().includes(q)
       return matchesFilter && matchesQuery
     })
-  }, [query, filter])
+  }, [query, filter, apps])
 
   return (
     <div className="flex flex-col gap-5">

@@ -1,13 +1,11 @@
-// TODO (Phase 0): Install Prisma and run `pnpm db:migrate dev` to apply this schema.
-// Run `pnpm add prisma @prisma/client` and `pnpm prisma init` first.
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
+  // Prisma 7: connection URLs live in prisma.config.ts, not here.
+  // Runtime adapter is passed to PrismaClient in lib/db.ts.
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -17,10 +15,10 @@ model User {
   role      Role     @default(ATHLETE)
   createdAt DateTime @default(now())
 
-  entitlements       Entitlement[]
-  coachRelationships CoachAthlete[] @relation("Coach")
-  athleteRelationships CoachAthlete[] @relation("Athlete")
-  subscriptionEvents SubscriptionEvent[]
+  entitlements         Entitlement[]
+  coachRelationships   CoachAthlete[]      @relation("Coach")
+  athleteRelationships CoachAthlete[]      @relation("Athlete")
+  subscriptionEvents   SubscriptionEvent[]
 
   @@map("users")
 }
@@ -48,16 +46,16 @@ model App {
 }
 
 model Entitlement {
-  id                     String            @id @default(uuid())
-  userId                 String
-  appSlug                String
-  status                 EntitlementStatus
-  stripeSubscriptionId   String            @unique
-  stripeCustomerId       String
-  currentPeriodEnd       DateTime
-  cancelAtPeriodEnd      Boolean           @default(false)
-  createdAt              DateTime          @default(now())
-  updatedAt              DateTime          @updatedAt
+  id                   String            @id @default(uuid())
+  userId               String
+  appSlug              String
+  status               EntitlementStatus
+  stripeSubscriptionId String            @unique
+  stripeCustomerId     String
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean           @default(false)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   app  App  @relation(fields: [appSlug], references: [slug])
@@ -77,12 +75,12 @@ enum EntitlementStatus {
 }
 
 model CoachAthlete {
-  id          String              @id @default(uuid())
+  id          String             @id @default(uuid())
   coachId     String
   athleteId   String
-  status      CoachAthleteStatus  @default(PENDING)
-  inviteToken String?             @unique
-  invitedAt   DateTime            @default(now())
+  status      CoachAthleteStatus @default(PENDING)
+  inviteToken String?            @unique
+  invitedAt   DateTime           @default(now())
   acceptedAt  DateTime?
 
   coach   User @relation("Coach", fields: [coachId], references: [id], onDelete: Cascade)

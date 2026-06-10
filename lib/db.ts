@@ -17,9 +17,7 @@ function createPrismaClient(): PrismaClient {
   const pool =
     globalForPrisma.pool ?? new pg.Pool({ connectionString })
 
-  if (process.env.NODE_ENV !== "production") {
-    globalForPrisma.pool = pool
-  }
+  globalForPrisma.pool = pool
 
   const adapter = new PrismaPg(pool)
   return new PrismaClient({
@@ -31,8 +29,19 @@ function createPrismaClient(): PrismaClient {
   })
 }
 
-export const db = globalForPrisma.prisma ?? createPrismaClient()
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = db
+function getPrismaClient(): PrismaClient {
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = createPrismaClient()
+  }
+  return globalForPrisma.prisma
 }
+
+export const db = new Proxy({} as PrismaClient, {
+  get(_target, prop) {
+    const client = getPrismaClient()
+    const value = Reflect.get(client, prop, client) as unknown
+    return typeof value === "function"
+      ? (value as (...args: unknown[]) => unknown).bind(client)
+      : value
+  },
+})

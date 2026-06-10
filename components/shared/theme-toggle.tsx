@@ -4,9 +4,11 @@ import * as React from "react"
 import { Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
 
+import { THEME_TOGGLE_ENABLED } from "@/lib/theme-config"
 import { Button } from "@/components/ui/button"
 
 export function ThemeToggle() {
+  if (!THEME_TOGGLE_ENABLED) return null
   const { setTheme, resolvedTheme } = useTheme()
   const [mounted, setMounted] = React.useState(false)
 

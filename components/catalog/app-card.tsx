@@ -16,6 +16,7 @@ export function AppCard({ app }: { app: HubApp }) {
   const Icon = appIconMap[app.icon]
   const isLocked = app.state === "locked"
   const [isLoading, setIsLoading] = React.useState(false)
+  const [checkoutError, setCheckoutError] = React.useState<string | null>(null)
 
   const handleActivate = React.useCallback(async () => {
     if (isLoading) return
@@ -26,6 +27,7 @@ export function AppCard({ app }: { app: HubApp }) {
     }
 
     setIsLoading(true)
+    setCheckoutError(null)
     try {
       const response = await fetch("/api/stripe/checkout", {
         method: "POST",
@@ -33,15 +35,25 @@ export function AppCard({ app }: { app: HubApp }) {
         body: JSON.stringify({ appSlug: app.id }),
       })
 
-      const data = (await response.json()) as { url?: string; error?: string }
+      const data = (await response.json().catch(() => ({}))) as {
+        url?: string
+        error?: string
+      }
 
       if (!response.ok || !data.url) {
-        throw new Error(data.error ?? "Failed to start checkout")
+        throw new Error(
+          data.error ??
+            (response.status === 500
+              ? "Checkout is not configured yet"
+              : "Failed to start checkout"),
+        )
       }
 
       window.location.href = data.url
     } catch (error) {
-      console.error("Checkout failed:", error)
+      setCheckoutError(
+        error instanceof Error ? error.message : "Checkout failed",
+      )
       setIsLoading(false)
     }
   }, [app.id, isLoading, isLocked, router])
@@ -110,6 +122,9 @@ export function AppCard({ app }: { app: HubApp }) {
       </div>
 
       <div className="mt-auto pt-1">
+        {checkoutError && (
+          <p className="mb-2 text-xs text-destructive">{checkoutError}</p>
+        )}
         {isLocked ? (
           <Button
             variant="outline"

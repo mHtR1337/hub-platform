@@ -61,6 +61,7 @@ async function main() {
         name: app.name,
         description: app.description,
         sortOrder: app.sortOrder,
+        stripePriceId: app.stripePriceId,
       },
     })
     console.log(`  ✓ ${app.slug}`)

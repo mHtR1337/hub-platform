@@ -18,9 +18,36 @@ model User {
   coachAthletesAsCoach   CoachAthlete[]      @relation("CoachAthletesCoach")
   coachAthletesAsAthlete CoachAthlete[]      @relation("CoachAthletesAthlete")
   subscriptionEvents     SubscriptionEvent[]
+  organization           Organization?       @relation("CoachOrganization")
 
   @@index([clerkId], map: "users_clerk_id_idx")
   @@map("users")
+}
+
+model Organization {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  sport     String   @default("")
+  coachId   String   @unique @map("coach_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  coach User   @relation("CoachOrganization", fields: [coachId], references: [id], onDelete: Cascade)
+  teams Team[]
+
+  @@map("organizations")
+}
+
+model Team {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members      CoachAthlete[]
+
+  @@index([organizationId], map: "teams_organization_id_idx")
+  @@map("teams")
 }
 
 model App {
@@ -63,18 +90,21 @@ model Entitlement {
 model CoachAthlete {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   coachId     String    @map("coach_id") @db.Uuid
-  athleteId   String    @map("athlete_id") @db.Uuid
+  athleteId   String?   @map("athlete_id") @db.Uuid
+  teamId      String?   @map("team_id") @db.Uuid
+  inviteEmail String?   @map("invite_email")
   status      String    @default("pending")
   inviteToken String?   @unique @map("invite_token")
   invitedAt   DateTime  @default(now()) @map("invited_at") @db.Timestamptz(6)
   acceptedAt  DateTime? @map("accepted_at") @db.Timestamptz(6)
 
-  coach   User @relation("CoachAthletesCoach", fields: [coachId], references: [id], onDelete: Cascade)
-  athlete User @relation("CoachAthletesAthlete", fields: [athleteId], references: [id], onDelete: Cascade)
+  coach   User  @relation("CoachAthletesCoach", fields: [coachId], references: [id], onDelete: Cascade)
+  athlete User? @relation("CoachAthletesAthlete", fields: [athleteId], references: [id], onDelete: Cascade)
+  team    Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
 
-  @@unique([coachId, athleteId], map: "coach_athletes_unique")
   @@index([coachId], map: "coach_athletes_coach_idx")
   @@index([athleteId], map: "coach_athletes_athlete_idx")
+  @@index([inviteEmail], map: "coach_athletes_invite_email_idx")
   @@map("coach_athletes")
 }
 

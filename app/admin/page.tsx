@@ -1,7 +1,8 @@
-import { AppShell } from "@/components/app-shell"
-import { AdminStatCards } from "@/components/admin-stat-cards"
-import { UsersTable } from "@/components/users-table"
-import { SubscriptionsByApp } from "@/components/subscriptions-by-app"
+// TODO (Phase 1): Gate this route server-side: require user.role === 'admin'.
+import { AppShell } from "@/components/platform/app-shell"
+import { AdminStatCards } from "@/components/admin/admin-stat-cards"
+import { UsersTable } from "@/components/admin/users-table"
+import { SubscriptionsByApp } from "@/components/admin/subscriptions-by-app"
 
 export default function AdminPage() {
   return (

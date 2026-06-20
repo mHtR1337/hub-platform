@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server"
 import { auth } from "@clerk/nextjs/server"
 
+import { createCheckoutSession } from "@/lib/payments"
 import { db } from "@/lib/db"
 import { stripeCheckoutConfigError } from "@/lib/stripe-prices"
-import { getAppUrl, getStripe } from "@/lib/stripe"
 
 export async function POST(request: Request) {
   const { userId: clerkUserId } = await auth()
@@ -47,35 +47,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    const stripe = getStripe()
-    const appUrl = getAppUrl()
-
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      customer_email: user.email,
-      line_items: [{ price: app.stripePriceId, quantity: 1 }],
-      success_url: `${appUrl}/apps?checkout=success`,
-      cancel_url: `${appUrl}/apps?checkout=canceled`,
-      metadata: {
-        userId: user.id,
-        appSlug: app.slug,
-        clerkUserId,
-      },
-      subscription_data: {
-        metadata: {
-          userId: user.id,
-          appSlug: app.slug,
-          clerkUserId,
-        },
-      },
+    const session = await createCheckoutSession({
+      userId: user.id,
+      email: user.email,
+      clerkUserId,
+      appSlug: app.slug,
+      stripePriceId: app.stripePriceId,
     })
-
-    if (!session.url) {
-      return NextResponse.json(
-        { error: "Failed to create checkout session" },
-        { status: 500 },
-      )
-    }
 
     return NextResponse.json({ url: session.url })
   } catch (error) {

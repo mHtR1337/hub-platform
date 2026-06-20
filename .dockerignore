@@ -1,0 +1,42 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build output
+.next
+out
+dist
+
+# Git & IDE
+.git
+.gitignore
+.cursor
+.vscode
+*.md
+!README.md
+
+# Env & secrets (injected at runtime via platform secrets)
+.env
+.env.*
+!.env.example
+
+# Local / dev-only
+.agents
+scripts
+.env.bulk
+skills-lock.json
+package-lock.json
+
+# Tests & coverage
+coverage
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vercel
+.vercel
+
+# Prisma generated client is copied from builder; skip local copy
+lib/generated

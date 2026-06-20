@@ -4,14 +4,18 @@ __v0_devtools.tsx
 __v0_jsx-dev-runtime.ts
 .snowflake/
 .v0-trash/
-.vercel/
 
 # Environment variables
 .env
 .env*.local
+.env.bulk
 
 # Common ignores
 node_modules
 .next/
 .DS_Store
 /lib/generated/prisma
+.vercel
+
+# npm lockfile (project uses pnpm)
+package-lock.json

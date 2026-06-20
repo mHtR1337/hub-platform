@@ -276,6 +276,55 @@ Mladen's athletes are not price-sensitive on a $9 tool that prevents a $2,000 in
 
 ---
 
+## Organization Model (Mladen's hub spec)
+
+Hub is not just a catalog of apps — it is the **central operating layer** for a coaching business. Every sub-app (web, iOS, Android) reads from the same backend and database.
+
+### Structure
+
+```
+Organization (one admin)
+├── Staff members (role + privileges: manage_roster, manage_billing, manage_tags…)
+├── Teams (one or more coaches + athletes; members can move between teams)
+│   └── Groups (squads, position groups, tags-within-team)
+├── Typed tags (sport, position, descriptive — filterable later)
+└── Seat plan (coach / athlete limits per package)
+```
+
+| Role | Capabilities |
+|---|---|
+| **Admin** | Full org control; founding coach starts as admin |
+| **Coach** | Manage teams, roster, invites (within seat limits) |
+| **Staff** | Configurable privileges (e.g. roster-only assistant) |
+| **Athlete** | Belongs to org + one or more teams; tagged for filtering |
+
+### Seat-based plans
+
+| Plan | Coaches | Athletes |
+|---|---|---|
+| Starter | 1 | 10 |
+| Growth | 2 | 20 |
+| Pro | 3 | 30 |
+| Elite | 5 | 50 |
+
+Invites and roster changes are blocked when seat limits are reached — upgrade path hooks into billing (payment provider TBD: Stripe / MoR).
+
+### Mobile-ready API (`/api/v1/*`)
+
+Same Clerk session as web. Key endpoints:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/v1/me` | Current user + org membership |
+| `GET /api/v1/org` | Org, teams, members, tags, seat usage, plans |
+| `GET /api/v1/org/teams/:id` | Team roster + groups |
+| `POST /api/v1/org/teams/:id/invite` | Invite athlete (seat-checked) |
+| `GET/POST /api/v1/org/tags` | Tag definitions + assign tags to members |
+
+iOS/Android apps consume these endpoints — no duplicate auth or billing logic in native clients.
+
+---
+
 ## The Ask
 
 Hub is infrastructure. The methodology is Mladen's. The platform handles identity, billing, entitlements, and coach–athlete relationships so every hour spent building goes into tools that reflect how elite performance coaching actually works — not into rebuilding login screens.

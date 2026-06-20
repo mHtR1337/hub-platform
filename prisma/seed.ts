@@ -1,7 +1,7 @@
-import "dotenv/config"
 import { PrismaPg } from "@prisma/adapter-pg"
 import pg from "pg"
 
+import { config } from "../lib/config"
 import { PrismaClient } from "../lib/generated/prisma/client"
 
 const appsData = [
@@ -10,7 +10,8 @@ const appsData = [
     name: "HRV Monitor",
     description: "Recovery & readiness tracking via heart rate variability.",
     priceMonthlyCents: 900,
-    stripePriceId: process.env.STRIPE_PRICE_HRV_MONITOR ?? "price_hrv_placeholder",
+    stripePriceId:
+      config.stripe.prices.hrvMonitor ?? "price_hrv_placeholder",
     sortOrder: 1,
   },
   {
@@ -19,7 +20,7 @@ const appsData = [
     description: "Training load management and ACWR for fight prep.",
     priceMonthlyCents: 1200,
     stripePriceId:
-      process.env.STRIPE_PRICE_COMBAT_TRACKER ?? "price_combat_placeholder",
+      config.stripe.prices.combatTracker ?? "price_combat_placeholder",
     sortOrder: 2,
   },
   {
@@ -28,7 +29,7 @@ const appsData = [
     description: "FTP, training zones, and critical power.",
     priceMonthlyCents: 700,
     stripePriceId:
-      process.env.STRIPE_PRICE_ENDURANCE_CALC ?? "price_endurance_placeholder",
+      config.stripe.prices.enduranceCalc ?? "price_endurance_placeholder",
     sortOrder: 3,
   },
   {
@@ -37,18 +38,18 @@ const appsData = [
     description:
       "All apps — HRV Monitor, Combat Tracker, and Endurance Calculator.",
     priceMonthlyCents: 2400,
-    stripePriceId: process.env.STRIPE_PRICE_BUNDLE ?? "price_bundle_placeholder",
+    stripePriceId: config.stripe.prices.bundle ?? "price_bundle_placeholder",
     sortOrder: 4,
   },
 ]
 
 async function main() {
-  const connectionString = process.env.DATABASE_URL
-  if (!connectionString) {
-    throw new Error("DATABASE_URL is not set")
-  }
-
-  const pool = new pg.Pool({ connectionString })
+  const pool = new pg.Pool({
+    connectionString: config.databaseUrl,
+    ssl: config.databaseUrl.includes("supabase")
+      ? { rejectUnauthorized: false }
+      : undefined,
+  })
   const adapter = new PrismaPg(pool)
   const db = new PrismaClient({ adapter })
 

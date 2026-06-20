@@ -1,3 +1,5 @@
+import { config } from "@/lib/config"
+
 const PLACEHOLDER_PATTERN = /_placeholder$/
 
 export function isPlaceholderStripePrice(priceId: string): boolean {
@@ -5,7 +7,7 @@ export function isPlaceholderStripePrice(priceId: string): boolean {
 }
 
 export function stripeCheckoutConfigError(priceId: string): string | null {
-  if (!process.env.STRIPE_SECRET_KEY?.startsWith("sk_")) {
+  if (!config.stripe.secretKey?.startsWith("sk_")) {
     return "Stripe is not configured. Add STRIPE_SECRET_KEY to .env.local."
   }
   if (isPlaceholderStripePrice(priceId)) {

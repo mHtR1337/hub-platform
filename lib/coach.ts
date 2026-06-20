@@ -1,18 +1,51 @@
 import { randomUUID } from "node:crypto"
 
+import { config } from "@/lib/config"
 import { db } from "@/lib/db"
+import { assertAthleteSeatAvailable } from "@/lib/seats"
 import { requireCoachOrganization } from "@/lib/users"
-import type { CoachAthleteStatus } from "@/types"
+import type { CoachAthleteStatus, StaffPrivilege } from "@/types"
+
+type MemberDb = Pick<typeof db, "organizationMember" | "teamMember">
+
+export { SeatLimitError } from "@/lib/seats"
+
+async function addOrgMemberTx(
+  organizationId: string,
+  userId: string,
+  role: "athlete" | "coach" | "staff" | "admin",
+  client: MemberDb,
+  privileges: StaffPrivilege[] = [],
+) {
+  return client.organizationMember.upsert({
+    where: {
+      organizationId_userId: { organizationId, userId },
+    },
+    create: { organizationId, userId, role, privileges },
+    update: { role, privileges },
+  })
+}
+
+async function addTeamMemberTx(
+  teamId: string,
+  organizationId: string,
+  userId: string,
+  role: "coach" | "athlete",
+  client: MemberDb,
+) {
+  return client.teamMember.upsert({
+    where: { teamId_userId: { teamId, userId } },
+    create: { teamId, organizationId, userId, role },
+    update: { role },
+  })
+}
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase()
 }
 
 export function inviteUrlForToken(token: string) {
-  const base =
-    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ??
-    "http://localhost:3000"
-  return `${base}/invite/${token}`
+  return `${config.appUrl}/invite/${token}`
 }
 
 export async function listCoachRoster(coachUserId: string) {
@@ -80,24 +113,33 @@ export async function inviteAthleteToTeam(
     if (linked) {
       throw new Error("This athlete is already on your roster.")
     }
+
+    await assertAthleteSeatAvailable(org.id)
   }
 
   const inviteToken = randomUUID()
 
-  const row = await db.coachAthlete.create({
-    data: {
-      coachId: coachUserId,
-      teamId,
-      inviteEmail: email,
-      athleteId: existingUser?.id ?? null,
-      status: existingUser ? "active" : "pending",
-      inviteToken: existingUser ? null : inviteToken,
-      acceptedAt: existingUser ? new Date() : null,
-    },
-    include: {
-      athlete: { select: { id: true, email: true } },
-      team: { select: { id: true, name: true } },
-    },
+  const row = await db.$transaction(async (tx) => {
+    if (existingUser) {
+      await addOrgMemberTx(org.id, existingUser.id, "athlete", tx)
+      await addTeamMemberTx(teamId, org.id, existingUser.id, "athlete", tx)
+    }
+
+    return tx.coachAthlete.create({
+      data: {
+        coachId: coachUserId,
+        teamId,
+        inviteEmail: email,
+        athleteId: existingUser?.id ?? null,
+        status: existingUser ? "active" : "pending",
+        inviteToken: existingUser ? null : inviteToken,
+        acceptedAt: existingUser ? new Date() : null,
+      },
+      include: {
+        athlete: { select: { id: true, email: true } },
+        team: { select: { id: true, name: true } },
+      },
+    })
   })
 
   return {
@@ -118,11 +160,17 @@ export async function createTeamForCoach(
     throw new Error("Complete coach setup before creating teams.")
   }
 
-  return db.team.create({
-    data: {
-      organizationId: org.id,
-      name: trimmed,
-    },
+  return db.$transaction(async (tx) => {
+    const team = await tx.team.create({
+      data: {
+        organizationId: org.id,
+        name: trimmed,
+      },
+    })
+
+    await addTeamMemberTx(team.id, org.id, coachUserId, "coach", tx)
+
+    return team
   })
 }
 
@@ -144,7 +192,10 @@ export async function revokeCoachAthlete(
 export async function acceptCoachInvite(token: string, athleteUserId: string) {
   const invite = await db.coachAthlete.findFirst({
     where: { inviteToken: token, status: "pending" },
-    include: { coach: { select: { id: true } } },
+    include: {
+      coach: { select: { id: true, organization: { select: { id: true } } } },
+      team: { select: { id: true, organizationId: true } },
+    },
   })
   if (!invite) throw new Error("Invite not found or already used.")
 
@@ -159,14 +210,32 @@ export async function acceptCoachInvite(token: string, athleteUserId: string) {
     )
   }
 
-  return db.coachAthlete.update({
-    where: { id: invite.id },
-    data: {
-      athleteId: athlete.id,
-      status: "active",
-      inviteToken: null,
-      acceptedAt: new Date(),
-    },
+  const orgId = invite.coach.organization?.id
+  if (!orgId) throw new Error("Organization not found for this invite.")
+
+  await assertAthleteSeatAvailable(orgId)
+
+  return db.$transaction(async (tx) => {
+    await addOrgMemberTx(orgId, athlete.id, "athlete", tx)
+    if (invite.teamId) {
+      await addTeamMemberTx(
+        invite.teamId,
+        invite.team?.organizationId ?? orgId,
+        athlete.id,
+        "athlete",
+        tx,
+      )
+    }
+
+    return tx.coachAthlete.update({
+      where: { id: invite.id },
+      data: {
+        athleteId: athlete.id,
+        status: "active",
+        inviteToken: null,
+        acceptedAt: new Date(),
+      },
+    })
   })
 }
 

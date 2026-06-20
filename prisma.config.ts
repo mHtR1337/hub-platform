@@ -1,6 +1,7 @@
-import "dotenv/config"
 import path from "node:path"
 import { defineConfig } from "prisma/config"
+
+import { config } from "./lib/config"
 
 export default defineConfig({
   schema: path.join(__dirname, "prisma", "schema.prisma"),
@@ -9,6 +10,6 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    url: process.env["DIRECT_URL"],
+    url: config.directUrl,
   },
 })

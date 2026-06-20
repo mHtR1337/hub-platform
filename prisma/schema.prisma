@@ -19,6 +19,10 @@ model User {
   coachAthletesAsAthlete CoachAthlete[]      @relation("CoachAthletesAthlete")
   subscriptionEvents     SubscriptionEvent[]
   organization           Organization?       @relation("CoachOrganization")
+  orgMemberships         OrganizationMember[]
+  teamMemberships        TeamMember[]
+  groupMemberships       GroupMember[]
+  tags                   MemberTag[]
 
   @@index([clerkId], map: "users_clerk_id_idx")
   @@map("users")
@@ -31,10 +35,31 @@ model Organization {
   coachId   String   @unique @map("coach_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  coach User   @relation("CoachOrganization", fields: [coachId], references: [id], onDelete: Cascade)
-  teams Team[]
+  coach          User                 @relation("CoachOrganization", fields: [coachId], references: [id], onDelete: Cascade)
+  members        OrganizationMember[]
+  teams          Team[]
+  tagDefinitions TagDefinition[]
+  plan           OrganizationPlan?
 
   @@map("organizations")
+}
+
+/// Org-level membership: admin, coach, staff, athlete. Staff carries JSON privileges.
+model OrganizationMember {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  role           String
+  privileges     Json     @default("[]") @db.JsonB
+  joinedAt       DateTime @default(now()) @map("joined_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId], map: "org_members_org_user_key")
+  @@index([userId], map: "org_members_user_id_idx")
+  @@index([organizationId, role], map: "org_members_org_role_idx")
+  @@map("organization_members")
 }
 
 model Team {
@@ -44,10 +69,121 @@ model Team {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  members      CoachAthlete[]
+  members      TeamMember[]
+  groups       Group[]
+  coachAthletes CoachAthlete[]
 
   @@index([organizationId], map: "teams_organization_id_idx")
   @@map("teams")
+}
+
+/// Team roster: coaches and athletes. Athletes may belong to multiple teams.
+model TeamMember {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teamId         String    @map("team_id") @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  role           String
+  joinedAt       DateTime  @default(now()) @map("joined_at") @db.Timestamptz(6)
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId], map: "team_members_team_user_key")
+  @@index([organizationId], map: "team_members_org_id_idx")
+  @@index([userId], map: "team_members_user_id_idx")
+  @@map("team_members")
+}
+
+/// Sub-groups within a team (tags, squads, position groups).
+model Group {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teamId         String   @map("team_id") @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  team    Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  members GroupMember[]
+
+  @@index([teamId], map: "groups_team_id_idx")
+  @@index([organizationId], map: "groups_org_id_idx")
+  @@map("groups")
+}
+
+model GroupMember {
+  id      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  groupId String   @map("group_id") @db.Uuid
+  userId  String   @map("user_id") @db.Uuid
+  addedAt DateTime @default(now()) @map("added_at") @db.Timestamptz(6)
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId], map: "group_members_group_user_key")
+  @@index([userId], map: "group_members_user_id_idx")
+  @@map("group_members")
+}
+
+/// Typed tag schema per org (sport, position, descriptive).
+model TagDefinition {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  slug           String
+  label          String
+  category       String
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignments  MemberTag[]
+
+  @@unique([organizationId, slug], map: "tag_defs_org_slug_key")
+  @@map("tag_definitions")
+}
+
+model MemberTag {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  tagDefinitionId String   @map("tag_definition_id") @db.Uuid
+  value           String   @default("")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tagDefinition TagDefinition @relation(fields: [tagDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tagDefinitionId], map: "member_tags_user_tag_key")
+  @@index([organizationId], map: "member_tags_org_id_idx")
+  @@map("member_tags")
+}
+
+/// Seat limits catalog (1 coach / 10 athletes, 2 / 20, etc.).
+model PlanTemplate {
+  slug         String @id
+  name         String
+  maxCoaches   Int    @map("max_coaches")
+  maxAthletes  Int    @map("max_athletes")
+  sortOrder    Int    @default(0) @map("sort_order")
+
+  organizations OrganizationPlan[]
+
+  @@map("plan_templates")
+}
+
+model OrganizationPlan {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @unique @map("organization_id") @db.Uuid
+  planSlug       String   @map("plan_slug")
+  maxCoaches     Int?     @map("max_coaches")
+  maxAthletes    Int?     @map("max_athletes")
+  status         String   @default("active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         PlanTemplate @relation(fields: [planSlug], references: [slug], onDelete: Restrict)
+
+  @@map("organization_plans")
 }
 
 model App {

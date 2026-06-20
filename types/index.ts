@@ -1,11 +1,30 @@
 // Shared TypeScript types used across the platform and sub-apps.
-// Sub-app-specific types should live in sub-apps/<slug>/ instead.
 
 export type UserRole = "athlete" | "coach" | "admin"
 
-export type EntitlementStatus = "active" | "trialing" | "past_due" | "canceled" | "unpaid"
+export type OrgMemberRole = "admin" | "coach" | "staff" | "athlete"
+
+export type TeamMemberRole = "coach" | "athlete"
+
+export type TagCategory = "sport" | "position" | "descriptive"
+
+export type StaffPrivilege =
+  | "manage_org"
+  | "manage_roster"
+  | "manage_billing"
+  | "manage_tags"
+  | "view_all"
+
+export type EntitlementStatus =
+  | "active"
+  | "trialing"
+  | "past_due"
+  | "canceled"
+  | "unpaid"
 
 export type CoachAthleteStatus = "pending" | "active" | "revoked"
+
+export type PlanStatus = "active" | "trialing" | "canceled"
 
 export interface PlatformUser {
   id: string
@@ -26,4 +45,18 @@ export interface Entitlement {
   cancelAtPeriodEnd: boolean
   createdAt: Date
   updatedAt: Date
+}
+
+export interface SeatLimits {
+  maxCoaches: number
+  maxAthletes: number
+  usedCoaches: number
+  usedAthletes: number
+}
+
+export interface PlanTemplateInfo {
+  slug: string
+  name: string
+  maxCoaches: number
+  maxAthletes: number
 }

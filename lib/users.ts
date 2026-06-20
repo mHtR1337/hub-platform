@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 
 import { db } from "@/lib/db"
 import type { User } from "@/lib/generated/prisma/client"
+import { bootstrapOrganizationForCoach } from "@/lib/organization"
 import { markOnboardingComplete, syncClerkEmail } from "@/lib/onboarding"
 import type { UserRole } from "@/types"
 
@@ -48,6 +49,16 @@ export async function getCurrentDbUser() {
     include: {
       organization: {
         include: { teams: { orderBy: { createdAt: "asc" } } },
+      },
+      orgMemberships: {
+        include: {
+          organization: {
+            include: {
+              plan: { include: { plan: true } },
+              teams: { orderBy: { createdAt: "asc" } },
+            },
+          },
+        },
       },
     },
   })
@@ -104,20 +115,7 @@ export async function becomeCoachWithOrganization(input: {
     })
 
     if (!orgExists) {
-      const org = await tx.organization.create({
-        data: {
-          coachId: user.id,
-          name: input.orgName,
-          sport: input.sport,
-        },
-      })
-
-      await tx.team.create({
-        data: {
-          organizationId: org.id,
-          name: input.teamName,
-        },
-      })
+      await bootstrapOrganizationForCoach(user.id, input, tx)
     }
   })
 

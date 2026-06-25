@@ -32,6 +32,7 @@ foreach ($entry in (Import-EnvFile (Join-Path $root ".env.bulk")).GetEnumerator(
 }
 
 $vars["NEXT_PUBLIC_APP_URL"] = $appUrl
+$vars["NEXT_PUBLIC_APP_ENV"] = "test"
 $vars["NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL"] = "/onboarding"
 
 Write-Host "Pushing $($vars.Count) variables to Vercel..."

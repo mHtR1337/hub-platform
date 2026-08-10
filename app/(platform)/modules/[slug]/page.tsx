@@ -1,4 +1,8 @@
 import { AppShell } from "@/components/platform/app-shell"
+import { SmftClient } from "@/components/modules/smft-client"
+import { getOrgContext, listAthletesForOrg } from "@/lib/athletes"
+import { listSmftResults } from "@/lib/smft"
+import { requireDbUser } from "@/lib/users"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 const MODULES: Record<
@@ -44,6 +48,35 @@ export default async function ModulePage({
 }) {
   const { slug } = await params
   const mod = MODULES[slug]
+
+  if (slug === "smft") {
+    const user = await requireDbUser()
+    const ctx = await getOrgContext(user.id)
+    const athletes = ctx
+      ? await listAthletesForOrg(ctx.organization.id, ctx.organization.teams[0]?.id)
+      : []
+    const results = ctx ? await listSmftResults(ctx.organization.id) : []
+
+    return (
+      <AppShell title="Testing / SMFT">
+        <div className="flex flex-col gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Testing / SMFT
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Manual result entry. Choosing Up/Down publishes a Hub flag on the
+              athlete card.
+            </p>
+          </div>
+          <SmftClient
+            athletes={athletes.map((a) => ({ id: a.id, name: a.name }))}
+            results={results}
+          />
+        </div>
+      </AppShell>
+    )
+  }
 
   return (
     <AppShell title={mod?.title ?? "Module"}>

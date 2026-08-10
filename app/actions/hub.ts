@@ -13,6 +13,7 @@ import {
   setEventParticipants,
   upsertAttendance,
 } from "@/lib/calendar"
+import { createSmftResult, type SmftDirection } from "@/lib/smft"
 import { requireDbUser } from "@/lib/users"
 
 async function requireOrg() {
@@ -127,4 +128,29 @@ export async function upsertAttendanceAction(
     actorId: user.id,
   })
   revalidatePath("/calendar")
+}
+
+export async function createSmftResultAction(formData: FormData) {
+  const { user, organization } = await requireOrg()
+  const athleteId = String(formData.get("athleteId") ?? "")
+  const metric = String(formData.get("metric") ?? "MAS")
+  const value = Number(formData.get("value"))
+  const unit = String(formData.get("unit") ?? "m/s")
+  const direction = String(formData.get("direction") ?? "none") as SmftDirection
+
+  if (!athleteId) throw new Error("Athlete is required.")
+
+  await createSmftResult({
+    organizationId: organization.id,
+    athleteId,
+    metric,
+    value,
+    unit,
+    direction,
+    actorId: user.id,
+  })
+
+  revalidatePath("/modules/smft")
+  revalidatePath("/board")
+  revalidatePath("/settings")
 }

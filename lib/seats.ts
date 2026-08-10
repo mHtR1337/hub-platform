@@ -22,8 +22,9 @@ export async function getOrganizationSeatLimits(
         role: { in: ["admin", "coach", "staff"] },
       },
     }),
-    db.organizationMember.count({
-      where: { organizationId, role: "athlete" },
+    // HSpec: athletes are org-managed records (no login). Archived do not count.
+    db.athlete.count({
+      where: { organizationId, archived: false },
     }),
   ])
 

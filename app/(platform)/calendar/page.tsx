@@ -3,13 +3,14 @@ import {
   CalendarClient,
   type CalendarEventCard,
 } from "@/components/calendar/calendar-client"
-import { getOrgContext } from "@/lib/athletes"
+import type { EventAthleteOption } from "@/components/calendar/event-drawer"
+import { getOrgContext, listAthletesForOrg } from "@/lib/athletes"
 import { listEventsForTeam } from "@/lib/calendar"
 import { requireDbUser } from "@/lib/users"
 
 function startOfWeek(d: Date) {
   const x = new Date(d)
-  const day = (x.getDay() + 6) % 7 // Mon=0
+  const day = (x.getDay() + 6) % 7
   x.setHours(0, 0, 0, 0)
   x.setDate(x.getDate() - day)
   return x
@@ -47,22 +48,39 @@ export default async function CalendarPage() {
   })}`
 
   let events: CalendarEventCard[] = []
+  let athletes: EventAthleteOption[] = []
   let teamId: string | null = null
 
   if (ctx) {
     teamId = ctx.organization.teams[0]?.id ?? null
-    const rows = await listEventsForTeam({
-      organizationId: ctx.organization.id,
-      teamId,
-      from: weekStart,
-      to: weekEnd,
-    })
+    const [rows, athleteRows] = await Promise.all([
+      listEventsForTeam({
+        organizationId: ctx.organization.id,
+        teamId,
+        from: weekStart,
+        to: weekEnd,
+      }),
+      listAthletesForOrg(ctx.organization.id, teamId ?? undefined),
+    ])
+
+    athletes = athleteRows.map((a) => ({
+      id: a.id,
+      name: a.name,
+      position: a.position,
+    }))
 
     events = rows.map((e) => {
       const dayIndex = Math.min(
         6,
-        Math.max(0, Math.floor((e.startsAt.getTime() - weekStart.getTime()) / 86400000)),
+        Math.max(
+          0,
+          Math.floor((e.startsAt.getTime() - weekStart.getTime()) / 86400000),
+        ),
       )
+      const attendance: Record<string, string> = {}
+      for (const row of e.attendance) {
+        attendance[row.athleteId] = row.status
+      }
       return {
         id: e.id,
         dayIndex,
@@ -70,7 +88,9 @@ export default async function CalendarPage() {
         type: e.type,
         timeLabel: formatTime(e.startsAt),
         location: e.location,
+        participantIds: e.participants.map((p) => p.athleteId),
         participantCount: e.participants.length,
+        attendance,
       }
     })
   }
@@ -81,6 +101,7 @@ export default async function CalendarPage() {
         weekLabel={weekLabel}
         dayLabels={dayLabels}
         events={events}
+        athletes={athletes}
         teamId={teamId}
         canCreate={!!ctx}
       />

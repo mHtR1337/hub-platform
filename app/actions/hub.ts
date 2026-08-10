@@ -8,7 +8,11 @@ import {
   updateAthleteMedicalStatus,
   updateAthleteTrainingStatus,
 } from "@/lib/athletes"
-import { createCalendarEvent } from "@/lib/calendar"
+import {
+  createCalendarEvent,
+  setEventParticipants,
+  upsertAttendance,
+} from "@/lib/calendar"
 import { requireDbUser } from "@/lib/users"
 
 async function requireOrg() {
@@ -93,4 +97,34 @@ export async function createEventAction(formData: FormData) {
 
   revalidatePath("/calendar")
   revalidatePath("/dashboard")
+}
+
+export async function setEventParticipantsAction(
+  eventId: string,
+  athleteIds: string[],
+) {
+  const { user, organization } = await requireOrg()
+  await setEventParticipants({
+    eventId,
+    organizationId: organization.id,
+    athleteIds,
+    actorId: user.id,
+  })
+  revalidatePath("/calendar")
+}
+
+export async function upsertAttendanceAction(
+  eventId: string,
+  athleteId: string,
+  status: string,
+) {
+  const { user, organization } = await requireOrg()
+  await upsertAttendance({
+    eventId,
+    organizationId: organization.id,
+    athleteId,
+    status,
+    actorId: user.id,
+  })
+  revalidatePath("/calendar")
 }

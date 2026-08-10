@@ -1,20 +1,25 @@
 import { db } from "@/lib/db"
 import { seedOrgRegistries } from "@/lib/organization"
+import { assertAthleteSeatAvailable } from "@/lib/seats"
 
 /** Resolve the caller's primary organization (coach-owned or first membership). */
 export async function getOrgContext(userId: string) {
+  const planInclude = { include: { plan: true } } as const
+  const orgInclude = {
+    teams: { orderBy: { createdAt: "asc" as const } },
+    plan: planInclude,
+  }
+
   const owned = await db.organization.findUnique({
     where: { coachId: userId },
-    include: { teams: { orderBy: { createdAt: "asc" } }, plan: true },
+    include: orgInclude,
   })
   if (owned) return { organization: owned, membershipRole: "admin" as const }
 
   const membership = await db.organizationMember.findFirst({
     where: { userId },
     include: {
-      organization: {
-        include: { teams: { orderBy: { createdAt: "asc" } }, plan: true },
-      },
+      organization: { include: orgInclude },
     },
     orderBy: { joinedAt: "asc" },
   })
@@ -59,6 +64,7 @@ export async function createAthlete(input: {
   if (!name) throw new Error("Athlete name is required.")
 
   await seedOrgRegistries(input.organizationId)
+  await assertAthleteSeatAvailable(input.organizationId)
 
   const athlete = await db.athlete.create({
     data: {

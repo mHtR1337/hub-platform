@@ -1,9 +1,14 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 
 import { createEventAction } from "@/app/actions/hub"
+import {
+  EventDrawer,
+  type EventAthleteOption,
+  type EventDrawerData,
+} from "@/components/calendar/event-drawer"
 import { EVENT_TYPES } from "@/lib/hspec"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -18,13 +23,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-export type CalendarEventCard = {
-  id: string
+export type CalendarEventCard = EventDrawerData & {
   dayIndex: number
-  title: string
-  type: string
-  timeLabel: string
-  location: string
   participantCount: number
 }
 
@@ -32,6 +32,7 @@ type Props = {
   weekLabel: string
   dayLabels: string[]
   events: CalendarEventCard[]
+  athletes: EventAthleteOption[]
   teamId: string | null
   canCreate: boolean
 }
@@ -40,6 +41,7 @@ export function CalendarClient({
   weekLabel,
   dayLabels,
   events,
+  athletes,
   teamId,
   canCreate,
 }: Props) {
@@ -47,6 +49,12 @@ export function CalendarClient({
   const [pending, startTransition] = useTransition()
   const [type, setType] = useState("training")
   const [open, setOpen] = useState(false)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  const selectedEvent = useMemo(
+    () => events.find((e) => e.id === selectedId) ?? null,
+    [events, selectedId],
+  )
 
   return (
     <div className="flex flex-col gap-4">
@@ -54,7 +62,7 @@ export function CalendarClient({
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Team Calendar</h1>
           <p className="text-sm text-muted-foreground">
-            {weekLabel} · time spine for sessions, surveys and linked app records.
+            {weekLabel} · click an event for participants and attendance.
           </p>
         </div>
         {canCreate && (
@@ -97,12 +105,7 @@ export function CalendarClient({
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="startsAt">Starts</Label>
-            <Input
-              id="startsAt"
-              name="startsAt"
-              type="datetime-local"
-              required
-            />
+            <Input id="startsAt" name="startsAt" type="datetime-local" required />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="location">Location</Label>
@@ -129,9 +132,11 @@ export function CalendarClient({
                 .map((e) => {
                   const meta = EVENT_TYPES.find((t) => t.slug === e.type)
                   return (
-                    <div
+                    <button
                       key={e.id}
-                      className="rounded-lg border border-l-4 border-l-primary bg-card p-2 text-xs shadow-sm"
+                      type="button"
+                      onClick={() => setSelectedId(e.id)}
+                      className="w-full rounded-lg border border-l-4 border-l-primary bg-card p-2 text-left text-xs shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                     >
                       <div className="font-semibold">{e.title}</div>
                       <div className="text-muted-foreground">{e.timeLabel}</div>
@@ -146,7 +151,7 @@ export function CalendarClient({
                           {e.participantCount} athletes
                         </Badge>
                       </div>
-                    </div>
+                    </button>
                   )
                 })}
               {events.filter((e) => e.dayIndex === i).length === 0 && (
@@ -158,6 +163,15 @@ export function CalendarClient({
           </Card>
         ))}
       </div>
+
+      <EventDrawer
+        event={selectedEvent}
+        athletes={athletes}
+        open={!!selectedEvent}
+        onOpenChange={(next) => {
+          if (!next) setSelectedId(null)
+        }}
+      />
     </div>
   )
 }

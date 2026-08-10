@@ -14,6 +14,7 @@ export async function listEventsForTeam(input: {
     },
     include: {
       participants: { include: { athlete: true } },
+      attendance: true,
       flags: {
         where: { status: "active" },
         include: { definition: true },
@@ -80,4 +81,108 @@ export async function createCalendarEvent(input: {
   })
 
   return event
+}
+
+export async function getCalendarEvent(eventId: string, organizationId: string) {
+  return db.calendarEvent.findFirst({
+    where: { id: eventId, organizationId },
+    include: {
+      participants: {
+        include: { athlete: true },
+        orderBy: { addedAt: "asc" },
+      },
+      attendance: true,
+      linkedRecords: true,
+      flags: {
+        where: { status: "active" },
+        include: { definition: true },
+      },
+    },
+  })
+}
+
+export async function setEventParticipants(input: {
+  eventId: string
+  organizationId: string
+  athleteIds: string[]
+  actorId?: string
+}) {
+  const event = await db.calendarEvent.findFirst({
+    where: { id: input.eventId, organizationId: input.organizationId },
+  })
+  if (!event) throw new Error("Event not found.")
+
+  await db.$transaction(async (tx) => {
+    await tx.eventParticipant.deleteMany({ where: { eventId: event.id } })
+    if (input.athleteIds.length) {
+      await tx.eventParticipant.createMany({
+        data: input.athleteIds.map((athleteId) => ({
+          eventId: event.id,
+          athleteId,
+        })),
+      })
+    }
+  })
+
+  await db.auditLog.create({
+    data: {
+      organizationId: input.organizationId,
+      actorId: input.actorId ?? null,
+      sourceApp: "hub",
+      action: "calendar_event.participants.update",
+      resourceType: "calendar_event",
+      resourceId: event.id,
+      newValue: { athleteIds: input.athleteIds },
+    },
+  })
+}
+
+export async function upsertAttendance(input: {
+  eventId: string
+  organizationId: string
+  athleteId: string
+  status: string
+  actorId?: string
+}) {
+  const event = await db.calendarEvent.findFirst({
+    where: { id: input.eventId, organizationId: input.organizationId },
+  })
+  if (!event) throw new Error("Event not found.")
+
+  const record = await db.attendanceRecord.upsert({
+    where: {
+      eventId_athleteId: {
+        eventId: input.eventId,
+        athleteId: input.athleteId,
+      },
+    },
+    create: {
+      eventId: input.eventId,
+      athleteId: input.athleteId,
+      status: input.status,
+      updatedById: input.actorId ?? null,
+    },
+    update: {
+      status: input.status,
+      updatedById: input.actorId ?? null,
+    },
+  })
+
+  await db.auditLog.create({
+    data: {
+      organizationId: input.organizationId,
+      actorId: input.actorId ?? null,
+      sourceApp: "hub",
+      action: "attendance.upsert",
+      resourceType: "attendance_record",
+      resourceId: record.id,
+      newValue: {
+        eventId: input.eventId,
+        athleteId: input.athleteId,
+        status: input.status,
+      },
+    },
+  })
+
+  return record
 }

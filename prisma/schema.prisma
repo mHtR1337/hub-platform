@@ -15,14 +15,20 @@ model User {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   entitlements           Entitlement[]
-  coachAthletesAsCoach   CoachAthlete[]      @relation("CoachAthletesCoach")
-  coachAthletesAsAthlete CoachAthlete[]      @relation("CoachAthletesAthlete")
+  coachAthletesAsCoach   CoachAthlete[]       @relation("CoachAthletesCoach")
+  coachAthletesAsAthlete CoachAthlete[]       @relation("CoachAthletesAthlete")
   subscriptionEvents     SubscriptionEvent[]
-  organization           Organization?       @relation("CoachOrganization")
+  organization           Organization?        @relation("CoachOrganization")
   orgMemberships         OrganizationMember[]
   teamMemberships        TeamMember[]
   groupMemberships       GroupMember[]
   tags                   MemberTag[]
+  athleteRecord          Athlete?
+  statusChanges          StatusChange[]
+  createdEvents          CalendarEvent[]
+  resolvedFlags          Flag[]
+  athleteNotes           AthleteNote[]
+  auditLogs              AuditLog[]
 
   @@index([clerkId], map: "users_clerk_id_idx")
   @@map("users")
@@ -35,11 +41,16 @@ model Organization {
   coachId   String   @unique @map("coach_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  coach          User                 @relation("CoachOrganization", fields: [coachId], references: [id], onDelete: Cascade)
-  members        OrganizationMember[]
-  teams          Team[]
-  tagDefinitions TagDefinition[]
-  plan           OrganizationPlan?
+  coach           User                 @relation("CoachOrganization", fields: [coachId], references: [id], onDelete: Cascade)
+  members         OrganizationMember[]
+  teams           Team[]
+  tagDefinitions  TagDefinition[]
+  plan            OrganizationPlan?
+  athletes        Athlete[]
+  statusOptions   StatusOption[]
+  calendarEvents  CalendarEvent[]
+  flagDefinitions FlagDefinition[]
+  auditLogs       AuditLog[]
 
   @@map("organizations")
 }
@@ -68,10 +79,13 @@ model Team {
   name           String
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  members      TeamMember[]
-  groups       Group[]
-  coachAthletes CoachAthlete[]
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members        TeamMember[]
+  groups         Group[]
+  coachAthletes  CoachAthlete[]
+  activeAthletes Athlete[]            @relation("AthleteActiveTeam")
+  athleteHistory AthleteTeamHistory[]
+  calendarEvents CalendarEvent[]
 
   @@index([organizationId], map: "teams_organization_id_idx")
   @@map("teams")
@@ -79,12 +93,12 @@ model Team {
 
 /// Team roster: coaches and athletes. Athletes may belong to multiple teams.
 model TeamMember {
-  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  teamId         String    @map("team_id") @db.Uuid
-  organizationId String    @map("organization_id") @db.Uuid
-  userId         String    @map("user_id") @db.Uuid
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teamId         String   @map("team_id") @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
   role           String
-  joinedAt       DateTime  @default(now()) @map("joined_at") @db.Timestamptz(6)
+  joinedAt       DateTime @default(now()) @map("joined_at") @db.Timestamptz(6)
 
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -103,8 +117,9 @@ model Group {
   name           String
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  team    Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  members GroupMember[]
+  team           Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  members        GroupMember[]
+  athleteMembers AthleteGroup[]
 
   @@index([teamId], map: "groups_team_id_idx")
   @@index([organizationId], map: "groups_org_id_idx")
@@ -134,8 +149,9 @@ model TagDefinition {
   category       String
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  assignments  MemberTag[]
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignments        MemberTag[]
+  athleteAssignments AthleteTag[]
 
   @@unique([organizationId, slug], map: "tag_defs_org_slug_key")
   @@map("tag_definitions")
@@ -159,11 +175,11 @@ model MemberTag {
 
 /// Seat limits catalog (1 coach / 10 athletes, 2 / 20, etc.).
 model PlanTemplate {
-  slug         String @id
-  name         String
-  maxCoaches   Int    @map("max_coaches")
-  maxAthletes  Int    @map("max_athletes")
-  sortOrder    Int    @default(0) @map("sort_order")
+  slug        String @id
+  name        String
+  maxCoaches  Int    @map("max_coaches")
+  maxAthletes Int    @map("max_athletes")
+  sortOrder   Int    @default(0) @map("sort_order")
 
   organizations OrganizationPlan[]
 
@@ -256,4 +272,301 @@ model SubscriptionEvent {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("subscription_events")
+}
+
+// ============================================================================
+// HSpec Hub v2 — per Mladen's product brief (2026-07-18)
+// Athlete = org-managed record (no login in MVP). One active team + history.
+// Statuses/tags/flags come from org-scoped registries with seeded defaults.
+// Calendar is the time spine; apps attach records to events via LinkedRecord.
+// Every important action lands in AuditLog.
+// ============================================================================
+
+/// Org-managed athlete record. NOT a login account in MVP.
+model Athlete {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  /// Single active team (MVP rule H-003); history in AthleteTeamHistory.
+  activeTeamId   String?   @map("active_team_id") @db.Uuid
+  /// Optional link to a User once athlete login ships (post-MVP).
+  userId         String?   @unique @map("user_id") @db.Uuid
+  name           String
+  dateOfBirth    DateTime? @map("date_of_birth") @db.Date
+  sex            String    @default("")
+  position       String    @default("")
+  /// Registry slugs; see StatusOption (kind medical/training).
+  medicalStatus  String    @default("available-no-issues") @map("medical_status")
+  trainingStatus String    @default("full-training-competition") @map("training_status")
+  archived       Boolean   @default(false)
+  archivedAt     DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization  Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  activeTeam    Team?                @relation("AthleteActiveTeam", fields: [activeTeamId], references: [id], onDelete: SetNull)
+  user          User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  teamHistory   AthleteTeamHistory[]
+  groups        AthleteGroup[]
+  tags          AthleteTag[]
+  statusHistory StatusChange[]
+  flags         Flag[]
+  participants  EventParticipant[]
+  attendance    AttendanceRecord[]
+  notes         AthleteNote[]
+
+  @@index([organizationId, archived], map: "athletes_org_archived_idx")
+  @@index([activeTeamId], map: "athletes_active_team_idx")
+  @@index([organizationId, trainingStatus], map: "athletes_org_training_idx")
+  @@map("athletes")
+}
+
+model AthleteTeamHistory {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  athleteId String    @map("athlete_id") @db.Uuid
+  teamId    String    @map("team_id") @db.Uuid
+  joinedAt  DateTime  @default(now()) @map("joined_at") @db.Timestamptz(6)
+  leftAt    DateTime? @map("left_at") @db.Timestamptz(6)
+
+  athlete Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  team    Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([athleteId], map: "athlete_team_history_athlete_idx")
+  @@map("athlete_team_history")
+}
+
+/// Athlete membership in flexible team groups (multi-select).
+model AthleteGroup {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  athleteId String   @map("athlete_id") @db.Uuid
+  groupId   String   @map("group_id") @db.Uuid
+  addedAt   DateTime @default(now()) @map("added_at") @db.Timestamptz(6)
+
+  athlete Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  group   Group   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([athleteId, groupId], map: "athlete_groups_athlete_group_key")
+  @@map("athlete_groups")
+}
+
+/// Multi-select contextual tags on athletes, from org TagDefinition registry.
+model AthleteTag {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  athleteId       String   @map("athlete_id") @db.Uuid
+  tagDefinitionId String   @map("tag_definition_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  athlete       Athlete       @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  tagDefinition TagDefinition @relation(fields: [tagDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([athleteId, tagDefinitionId], map: "athlete_tags_athlete_tag_key")
+  @@map("athlete_tags")
+}
+
+/// Org-scoped registry of medical/training status options (seeded defaults).
+model StatusOption {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  /// "medical" | "training"
+  kind           String
+  slug           String
+  label          String
+  color          String   @default("gray")
+  sortOrder      Int      @default(0) @map("sort_order")
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, kind, slug], map: "status_options_org_kind_slug_key")
+  @@map("status_options")
+}
+
+/// Audit trail of medical/training status changes (who/when/old/new/why).
+model StatusChange {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  athleteId String   @map("athlete_id") @db.Uuid
+  kind      String
+  oldValue  String   @map("old_value")
+  newValue  String   @map("new_value")
+  reason    String   @default("")
+  /// "visual-board" | "athlete-drawer" | app slug
+  source    String   @default("hub")
+  actorId   String?  @map("actor_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  athlete Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  actor   User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([athleteId, createdAt], map: "status_changes_athlete_time_idx")
+  @@map("status_changes")
+}
+
+/// Calendar is the time spine (brief C-001). Events are shared containers.
+model CalendarEvent {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  teamId         String?   @map("team_id") @db.Uuid
+  /// Registry slug, e.g. training | gym | match | testing | survey | task...
+  type           String    @default("training")
+  title          String
+  startsAt       DateTime  @map("starts_at") @db.Timestamptz(6)
+  endsAt         DateTime? @map("ends_at") @db.Timestamptz(6)
+  location       String    @default("")
+  notes          String    @default("")
+  /// Multiple session descriptors (S-005): speed, strength, tactical...
+  descriptors    String[]  @default([])
+  createdById    String?   @map("created_by_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization  Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team          Team?              @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  createdBy     User?              @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  participants  EventParticipant[]
+  attendance    AttendanceRecord[]
+  linkedRecords LinkedRecord[]
+  flags         Flag[]
+
+  @@index([organizationId, startsAt], map: "calendar_events_org_time_idx")
+  @@index([teamId, startsAt], map: "calendar_events_team_time_idx")
+  @@map("calendar_events")
+}
+
+model EventParticipant {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId   String   @map("event_id") @db.Uuid
+  athleteId String   @map("athlete_id") @db.Uuid
+  addedAt   DateTime @default(now()) @map("added_at") @db.Timestamptz(6)
+
+  event   CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  athlete Athlete       @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, athleteId], map: "event_participants_event_athlete_key")
+  @@index([athleteId], map: "event_participants_athlete_idx")
+  @@map("event_participants")
+}
+
+/// Attendance per athlete per event: full/partial/modified/missed/other.
+model AttendanceRecord {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId     String   @map("event_id") @db.Uuid
+  athleteId   String   @map("athlete_id") @db.Uuid
+  status      String   @default("full")
+  note        String   @default("")
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  event   CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  athlete Athlete       @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, athleteId], map: "attendance_event_athlete_key")
+  @@index([athleteId], map: "attendance_athlete_idx")
+  @@map("attendance_records")
+}
+
+/// Generic link from an app-owned record to Hub context (brief A-002).
+model LinkedRecord {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId    String   @map("event_id") @db.Uuid
+  /// Owning app slug, e.g. survey-tool | session-tool | smft | hiit-builder
+  appSlug    String   @map("app_slug")
+  /// Record kind inside the app: attendance | srpe | diary-note | pdf...
+  recordType String   @map("record_type")
+  recordId   String   @map("record_id")
+  label      String   @default("")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId], map: "linked_records_event_idx")
+  @@index([appSlug, recordType], map: "linked_records_app_type_idx")
+  @@map("linked_records")
+}
+
+/// Org-scoped flag type registry (SET-003): visibility + behavior settings.
+model FlagDefinition {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  slug           String
+  label          String
+  /// Source app slug or "hub" for manual flags.
+  sourceApp      String   @default("hub") @map("source_app")
+  severity       String   @default("info")
+  enabled        Boolean  @default(true)
+  showOnBoard    Boolean  @default(true) @map("show_on_board")
+  showOnCalendar Boolean  @default(true) @map("show_on_calendar")
+  showOnCard     Boolean  @default(true) @map("show_on_card")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  flags        Flag[]
+
+  @@unique([organizationId, slug], map: "flag_definitions_org_slug_key")
+  @@map("flag_definitions")
+}
+
+/// Flag instance: app-generated or manual signal requiring attention (S-006).
+model Flag {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String    @map("organization_id") @db.Uuid
+  flagDefinitionId String    @map("flag_definition_id") @db.Uuid
+  athleteId        String?   @map("athlete_id") @db.Uuid
+  eventId          String?   @map("event_id") @db.Uuid
+  /// active | acknowledged | resolved | snoozed
+  status           String    @default("active")
+  message          String    @default("")
+  sourceApp        String    @default("hub") @map("source_app")
+  snoozedUntil     DateTime? @map("snoozed_until") @db.Timestamptz(6)
+  resolvedById     String?   @map("resolved_by_id") @db.Uuid
+  resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  definition FlagDefinition @relation(fields: [flagDefinitionId], references: [id], onDelete: Cascade)
+  athlete    Athlete?       @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  event      CalendarEvent? @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  resolvedBy User?          @relation(fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status], map: "flags_org_status_idx")
+  @@index([athleteId, status], map: "flags_athlete_status_idx")
+  @@map("flags")
+}
+
+/// Coach/medical/performance notes attached to an athlete.
+model AthleteNote {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  athleteId String   @map("athlete_id") @db.Uuid
+  authorId  String?  @map("author_id") @db.Uuid
+  body      String
+  /// coach | medical | performance — drives visibility rules later.
+  kind      String   @default("coach")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  athlete Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  author  User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([athleteId, createdAt], map: "athlete_notes_athlete_time_idx")
+  @@map("athlete_notes")
+}
+
+/// Memory of what changed (AUD-001): actor, source, resource, old/new.
+model AuditLog {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  actorId        String?  @map("actor_id") @db.Uuid
+  sourceApp      String   @default("hub") @map("source_app")
+  action         String
+  resourceType   String   @map("resource_type")
+  resourceId     String   @default("") @map("resource_id")
+  oldValue       Json?    @map("old_value") @db.JsonB
+  newValue       Json?    @map("new_value") @db.JsonB
+  reason         String   @default("")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor        User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt], map: "audit_logs_org_time_idx")
+  @@index([resourceType, resourceId], map: "audit_logs_resource_idx")
+  @@map("audit_logs")
 }

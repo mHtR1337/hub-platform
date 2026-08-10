@@ -1,4 +1,5 @@
 import { db } from "@/lib/db"
+import { DEFAULT_FLAGS, MEDICAL_STATUSES, TRAINING_STATUSES } from "@/lib/hspec"
 import type {
   OrgMemberRole,
   StaffPrivilege,
@@ -14,6 +15,8 @@ type OrgDb = Pick<
   | "teamMember"
   | "organizationPlan"
   | "tagDefinition"
+  | "statusOption"
+  | "flagDefinition"
 >
 
 const ADMIN_PRIVILEGES: StaffPrivilege[] = [
@@ -145,7 +148,51 @@ export async function bootstrapOrganizationForCoach(
     })
   }
 
+  await seedOrgRegistries(org.id, client)
+
   return org
+}
+
+/**
+ * Seed HSpec default registries (statuses + flags) for an organization.
+ * Idempotent — safe to run on both new and existing organizations.
+ */
+export async function seedOrgRegistries(
+  organizationId: string,
+  client: Pick<OrgDb, "statusOption" | "flagDefinition"> = db,
+) {
+  await client.statusOption.createMany({
+    data: [
+      ...MEDICAL_STATUSES.map((s) => ({
+        organizationId,
+        kind: "medical",
+        slug: s.slug,
+        label: s.label,
+        color: s.color,
+        sortOrder: s.sortOrder,
+      })),
+      ...TRAINING_STATUSES.map((s) => ({
+        organizationId,
+        kind: "training",
+        slug: s.slug,
+        label: s.label,
+        color: s.color,
+        sortOrder: s.sortOrder,
+      })),
+    ],
+    skipDuplicates: true,
+  })
+
+  await client.flagDefinition.createMany({
+    data: DEFAULT_FLAGS.map((f) => ({
+      organizationId,
+      slug: f.slug,
+      label: f.label,
+      sourceApp: f.sourceApp,
+      severity: f.severity,
+    })),
+    skipDuplicates: true,
+  })
 }
 
 export async function addOrgMember(
